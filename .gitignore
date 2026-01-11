@@ -3,6 +3,9 @@
 /node_modules
 /build
 
+# Build cache
+tsconfig.build.tsbuildinfo
+
 # Logs
 logs
 *.log
