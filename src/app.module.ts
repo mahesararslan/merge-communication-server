@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { DirectChatModule } from './direct-chat/direct-chat.module';
 import { AuthModule } from './auth/auth.module';
 import { RedisModule } from './redis/redis.module';
+import { GeneralChatModule } from './general-chat/general-chat.module';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { RedisModule } from './redis/redis.module';
     }),
     RedisModule,
     DirectChatModule, 
-    AuthModule,
+    AuthModule, GeneralChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],
