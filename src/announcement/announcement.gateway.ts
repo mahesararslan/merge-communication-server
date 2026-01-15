@@ -8,31 +8,31 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { GeneralChatEvents, RedisMessagePayload } from './types/general-chat.type';
+import { AnnouncementEvents, RedisAnnouncementPayload } from './types/announcement.type';
 import { UseGuards, UsePipes, ValidationPipe, Logger, OnModuleInit } from '@nestjs/common';
 import { WsJwtGuard } from 'src/auth/ws-jwt/ws-jwt.guard';
 import { SocketAuthMiddleware } from 'src/auth/ws.mw';
-import { GeneralChatMessage } from 'src/entities/general-chat-message.entity';
+import { Announcement } from 'src/entities/announcement.entity';
 import { RedisService } from 'src/redis/redis.service';
 import { ConfigService } from '@nestjs/config';
-import { SendMessageDto } from './dto/send-message.dto';
-import { DeleteMessageDto } from './dto/delete-message.dto';
-import { UpdateMessageDto } from './dto/update-message.dto';
+import { PostAnnouncementDto } from './dto/post-announcement.dto';
+import { EditAnnouncementDto } from './dto/edit-announcement.dto';
+import { DeleteAnnouncementDto } from './dto/delete-announcement.dto';
 import axios from 'axios';
 
 @WebSocketGateway({ 
-  namespace: 'general-chat',
+  namespace: 'announcement',
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     credentials: true,
   },
 })
 @UseGuards(WsJwtGuard)
-export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
+export class AnnouncementGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer()
-  server: Server<any, GeneralChatEvents>;
+  server: Server<any, AnnouncementEvents>;
 
-  private readonly logger = new Logger(GeneralChatGateway.name);
+  private readonly logger = new Logger(AnnouncementGateway.name);
   private backendUrl: string;
   private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set of socket IDs
   private roomMembers: Map<string, Set<string>> = new Map(); // roomId -> Set of user IDs
@@ -47,8 +47,8 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   async onModuleInit() {
     // Subscribe to Redis channels after the module is fully initialized
     try {
-      await this.redisService.subscribe('general-chat', this.handleRedisMessage.bind(this));
-      this.logger.log('Subscribed to Redis general-chat channel');
+      await this.redisService.subscribe('announcements', this.handleRedisMessage.bind(this));
+      this.logger.log('Subscribed to Redis announcements channel');
     } catch (error) {
       this.logger.error('Failed to subscribe to Redis:', error.message);
     }
@@ -56,7 +56,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
   afterInit(server: Server) {
     server.use(SocketAuthMiddleware() as any);
-    this.logger.log('General chat gateway initialized');
+    this.logger.log('Announcement gateway initialized');
   }
 
   async handleConnection(client: Socket) {
@@ -159,22 +159,17 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
     }
   }
 
-  @SubscribeMessage('sendMessage')
+  @SubscribeMessage('postAnnouncement')
   @UsePipes(new ValidationPipe())
-  async handleSendMessage(
+  async handlePostAnnouncement(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: SendMessageDto,
+    @MessageBody() data: PostAnnouncementDto,
   ) {
     try {
       const authorId = (client as any).user?.userId;
       
       if (!authorId) {
         return { success: false, error: 'Unauthorized' };
-      }
-
-      // Validate that either content or attachmentURL is provided
-      if (!data.content && !data.attachmentURL) {
-        return { success: false, error: 'Either content or attachmentURL must be provided' };
       }
 
       // Get the token from the client
@@ -188,14 +183,14 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
       // Clean the token (remove any whitespace or newlines)
       const cleanToken = token.trim();
       
-      // Call backend API to store the message
+      // Call backend API to create the announcement
       const response = await axios.post(
-        `${this.backendUrl}/general-chat`,
+        `${this.backendUrl}/announcements/create`,
         {
           roomId: data.roomId,
-          content: data.content || null,
-          attachmentURL: data.attachmentURL || null,
-          replyToId: data.replyToId || null,
+          title: data.title,
+          content: data.content,
+          isPublished: data.isPublished ?? true,
         },
         {
           headers: {
@@ -205,25 +200,25 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         },
       );
       
-      const savedMessage = response.data as GeneralChatMessage;
+      const savedAnnouncement = response.data as Announcement;
 
       // Publish to Redis for other instances
-      const payload: RedisMessagePayload = {
-        type: 'new-message',
-        data: savedMessage,
+      const payload: RedisAnnouncementPayload = {
+        type: 'new-announcement',
+        data: savedAnnouncement,
         roomId: data.roomId,
         authorId,
       };
-      await this.redisService.publish('general-chat', payload);
+      await this.redisService.publish('announcements', payload);
 
-      return { success: true, message: savedMessage };
+      return { success: true, announcement: savedAnnouncement };
     } catch (error) {
-      this.logger.error('Error sending message:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Failed to send message';
+      this.logger.error('Error posting announcement:', error.response?.data || error.message);
+      const errorMessage = error.response?.data?.message || 'Failed to post announcement';
       
       // Emit error event to client
       client.emit('error', {
-        action: 'sendMessage',
+        action: 'postAnnouncement',
         error: errorMessage,
       });
 
@@ -234,11 +229,11 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
     }
   }
 
-  @SubscribeMessage('updateMessage')
+  @SubscribeMessage('editAnnouncement')
   @UsePipes(new ValidationPipe())
-  async handleUpdateMessage(
+  async handleEditAnnouncement(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: UpdateMessageDto,
+    @MessageBody() data: EditAnnouncementDto,
   ) {
     try {
       const userId = (client as any).user?.userId;
@@ -256,12 +251,14 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
       const cleanToken = token.trim();
 
-      // Call backend API to update the message - backend handles all validation
+      // Call backend API to update the announcement
       const response = await axios.patch(
-        `${this.backendUrl}/general-chat/${data.messageId}?roomId=${data.roomId}`,
+        `${this.backendUrl}/announcements/${data.announcementId}`,
         {
+          roomId: data.roomId,
+          title: data.title,
           content: data.content,
-          attachmentURL: data.attachmentURL,
+          isPublished: data.isPublished,
         },
         {
           headers: {
@@ -271,27 +268,27 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         },
       );
 
-      const updatedMessage = response.data as GeneralChatMessage;
+      const updatedAnnouncement = response.data as Announcement;
 
       // Publish to Redis for other instances
-      const payload: RedisMessagePayload = {
-        type: 'message-updated',
-        data: updatedMessage,
+      const payload: RedisAnnouncementPayload = {
+        type: 'announcement-updated',
+        data: updatedAnnouncement,
         roomId: data.roomId,
         authorId: userId,
       };
-      await this.redisService.publish('general-chat', payload);
+      await this.redisService.publish('announcements', payload);
 
-      return { success: true, message: updatedMessage };
+      return { success: true, announcement: updatedAnnouncement };
     } catch (error) {
-      this.logger.error('Error updating message:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Failed to update message';
+      this.logger.error('Error editing announcement:', error.response?.data || error.message);
+      const errorMessage = error.response?.data?.message || 'Failed to edit announcement';
       
       // Emit error event to client
       client.emit('error', {
-        action: 'updateMessage',
+        action: 'editAnnouncement',
         error: errorMessage,
-        messageId: data.messageId,
+        announcementId: data.announcementId,
       });
 
       return { 
@@ -301,11 +298,11 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
     }
   }
 
-  @SubscribeMessage('deleteForMe')
+  @SubscribeMessage('deleteAnnouncement')
   @UsePipes(new ValidationPipe())
-  async handleDeleteForMe(
+  async handleDeleteAnnouncement(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: DeleteMessageDto,
+    @MessageBody() data: DeleteAnnouncementDto,
   ) {
     try {
       const userId = (client as any).user?.userId;
@@ -323,9 +320,9 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
       const cleanToken = token.trim();
 
-      // Call backend API to delete message for this user
+      // Call backend API to delete the announcement
       await axios.delete(
-        `${this.backendUrl}/general-chat/${data.messageId}/for-me?roomId=${data.roomId}`,
+        `${this.backendUrl}/announcements/${data.announcementId}?roomId=${data.roomId}`,
         {
           headers: {
             'Authorization': `Bearer ${cleanToken}`,
@@ -333,88 +330,29 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
           },
         },
       );
-
-      // No need to publish to Redis as this is user-specific
-      // The message is only deleted for this specific user
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Error deleting message for user:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Failed to delete message';
-      
-      // Emit error event to client
-      client.emit('error', {
-        action: 'deleteForMe',
-        error: errorMessage,
-        messageId: data.messageId,
-      });
-
-      return { 
-        success: false, 
-        error: errorMessage
-      };
-    }
-  }
-
-  @SubscribeMessage('deleteForEveryone')
-  @UsePipes(new ValidationPipe())
-  async handleDeleteForEveryone(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: DeleteMessageDto,
-  ) {
-    try {
-      const userId = (client as any).user?.userId;
-      
-      if (!userId) {
-        return { success: false, error: 'Unauthorized' };
-      }
-
-      const token = this.extractToken(client);
-      
-      if (!token) {
-        this.logger.error('No token found');
-        return { success: false, error: 'Authentication token not found' };
-      }
-
-      const cleanToken = token.trim();
-
-      // Call backend API to delete message for everyone
-      const response = await axios.delete(
-        `${this.backendUrl}/general-chat/${data.messageId}/for-everyone?roomId=${data.roomId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${cleanToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-
-      const deletedMessage = response.data as any;
 
       // Publish to Redis for other instances to notify all room members
-      const payload: RedisMessagePayload = {
-        type: 'message-deleted',
+      const payload: RedisAnnouncementPayload = {
+        type: 'announcement-deleted',
         data: {
-          messageId: data.messageId,
-          deletedFor: 'everyone',
+          announcementId: data.announcementId,
           roomId: data.roomId,
-          authorId: deletedMessage.author?.id || userId,
         },
         roomId: data.roomId,
         authorId: userId,
       };
-      await this.redisService.publish('general-chat', payload);
+      await this.redisService.publish('announcements', payload);
 
       return { success: true };
     } catch (error) {
-      this.logger.error('Error deleting message for everyone:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Failed to delete message for everyone';
+      this.logger.error('Error deleting announcement:', error.response?.data || error.message);
+      const errorMessage = error.response?.data?.message || 'Failed to delete announcement';
       
       // Emit error event to client
       client.emit('error', {
-        action: 'deleteForEveryone',
+        action: 'deleteAnnouncement',
         error: errorMessage,
-        messageId: data.messageId,
+        announcementId: data.announcementId,
       });
 
       return { 
@@ -422,27 +360,38 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         error: errorMessage
       };
     }
+  }
+
+  // Method to be called by backend API for scheduled announcements
+  async broadcastScheduledAnnouncement(data: any, roomId: string) {
+    const payload: RedisAnnouncementPayload = {
+      type: 'new-announcement',
+      data: data,
+      roomId,
+      authorId: data.authorId,
+    };
+    await this.redisService.publish('announcements', payload);
   }
 
   private handleRedisMessage(message: any) {
     try {
-      // Message is already parsed by RedisService, no need to parse again
-      const payload: RedisMessagePayload = message;
+      // Message is already parsed by RedisService
+      const payload: RedisAnnouncementPayload = message;
 
       switch (payload.type) {
-        case 'new-message':
+        case 'new-announcement':
           if (payload.roomId) {
-            this.handleNewMessage(payload.data as GeneralChatMessage, payload.roomId);
+            this.handleNewAnnouncement(payload.data as Announcement, payload.roomId);
           }
           break;
-        case 'message-deleted':
+        case 'announcement-deleted':
           if (payload.roomId) {
-            this.handleMessageDeletedFromRedis(payload.data, payload.roomId);
+            this.handleAnnouncementDeleted(payload.data, payload.roomId);
           }
           break;
-        case 'message-updated':
+        case 'announcement-updated':
           if (payload.roomId) {
-            this.handleMessageUpdatedFromRedis(payload.data as GeneralChatMessage, payload.roomId);
+            this.handleAnnouncementUpdated(payload.data as Announcement, payload.roomId);
           }
           break;
       }
@@ -451,19 +400,19 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
     }
   }
 
-  private handleNewMessage(message: GeneralChatMessage, roomId: string) {
+  private handleNewAnnouncement(announcement: Announcement, roomId: string) {
     // Broadcast to all members in the room
-    this.server.to(`room:${roomId}`).emit('newMessage', message);
+    this.server.to(`room:${roomId}`).emit('newAnnouncement', announcement);
   }
 
-  private handleMessageDeletedFromRedis(data: { messageId: string; deletedFor: 'everyone'; roomId: string; authorId: string }, roomId: string) {
+  private handleAnnouncementDeleted(data: { announcementId: string; roomId: string }, roomId: string) {
     // Broadcast to all room members
-    this.server.to(`room:${roomId}`).emit('messageDeleted', data);
+    this.server.to(`room:${roomId}`).emit('announcementDeleted', data);
   }
 
-  private handleMessageUpdatedFromRedis(message: GeneralChatMessage, roomId: string) {
+  private handleAnnouncementUpdated(announcement: Announcement, roomId: string) {
     // Broadcast to all members in the room
-    this.server.to(`room:${roomId}`).emit('messageUpdated', message);
+    this.server.to(`room:${roomId}`).emit('announcementUpdated', announcement);
   }
 
   private extractToken(client: Socket): string | null {

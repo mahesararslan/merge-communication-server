@@ -6,6 +6,7 @@ import { DirectChatModule } from './direct-chat/direct-chat.module';
 import { AuthModule } from './auth/auth.module';
 import { RedisModule } from './redis/redis.module';
 import { GeneralChatModule } from './general-chat/general-chat.module';
+import { AnnouncementModule } from './announcement/announcement.module';
 
 @Module({
   imports: [
@@ -15,9 +16,12 @@ import { GeneralChatModule } from './general-chat/general-chat.module';
     }),
     RedisModule,
     DirectChatModule, 
-    AuthModule, GeneralChatModule,
+    AuthModule, 
+    GeneralChatModule, 
+    AnnouncementModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
+
