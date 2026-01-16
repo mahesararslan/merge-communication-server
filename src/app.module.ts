@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { RedisModule } from './redis/redis.module';
 import { GeneralChatModule } from './general-chat/general-chat.module';
 import { AnnouncementModule } from './announcement/announcement.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { AnnouncementModule } from './announcement/announcement.module';
     DirectChatModule, 
     AuthModule, 
     GeneralChatModule, 
-    AnnouncementModule,
+    AnnouncementModule, NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
