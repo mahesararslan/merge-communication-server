@@ -10,6 +10,7 @@ import { UseGuards, Logger, OnModuleInit } from '@nestjs/common';
 import { WsJwtGuard } from 'src/auth/ws-jwt/ws-jwt.guard';
 import { SocketAuthMiddleware } from 'src/auth/ws.mw';
 import { RedisService } from 'src/redis/redis.service';
+import axios from 'axios';
 
 @WebSocketGateway({ 
   namespace: 'notifications',
@@ -46,9 +47,10 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
   async handleConnection(client: Socket) {
     try {
       const userId = (client as any).user?.userId;
-      
-      if (!userId) {
-        this.logger.warn('Client connected without user info');
+      const accessToken = (client as any).user?.accessToken;
+
+      if (!userId || !accessToken) {
+        this.logger.warn('Client connected without user info or accessToken');
         client.disconnect();
         return;
       }
@@ -59,9 +61,32 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
       }
       this.userSockets.get(userId)!.add(client.id);
 
-      // Join a room specific to this user
+      // Join a room specific to this user (for direct notifications)
       client.join(`user:${userId}`);
-      
+
+      // Fetch all rooms the user is a member of and join those notification rooms
+      try {
+        // Replace with your backend API URL
+        const backendUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+        const response = await axios.get(`${backendUrl}/room/my-rooms`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        let rooms: any[] = [];
+        if (response.data && typeof response.data === 'object' && Array.isArray((response.data as any).rooms)) {
+          rooms = (response.data as any).rooms;
+        }
+        for (const room of rooms) {
+          if (room.id) {
+            client.join(`room:${room.id}`);
+            this.logger.log(`Client ${client.id} joined notification room:${room.id}`);
+          }
+        }
+      } catch (err) {
+        this.logger.error('Failed to fetch/join user rooms for notifications:', err?.message || err);
+      }
+
       this.logger.log(`Client ${client.id} connected for user ${userId}`);
     } catch (error) {
       this.logger.error('Error handling connection:', error);

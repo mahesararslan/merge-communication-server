@@ -436,14 +436,23 @@ export class DirectChatGateway implements OnGatewayConnection, OnGatewayDisconne
 
     // Try to get from cookies
     const cookies = client.handshake.headers?.cookie;
+    this.logger.log('Checking cookies for token');
+    this.logger.log('Cookies string:', cookies);
+    
     if (cookies) {
       const accessTokenCookie = cookies
         .split(';')
         .find(cookie => cookie.trim().startsWith('accessToken='));
       
+      this.logger.log('Found accessToken cookie:', accessTokenCookie ? 'Yes' : 'No');
+      
       if (accessTokenCookie) {
-        return accessTokenCookie.split('=')[1].trim();
+        const cookieToken = accessTokenCookie.split('=')[1].trim();
+        this.logger.log('Extracted token from cookie (first 20 chars):', cookieToken.substring(0, 20) + '...');
+        return cookieToken;
       }
+    } else {
+      this.logger.log('No cookies found in handshake headers');
     }
 
     this.logger.warn('No token found in headers, auth, or cookies');
