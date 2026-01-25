@@ -1,6 +1,6 @@
-import { 
-  SubscribeMessage, 
-  WebSocketGateway, 
+import {
+  SubscribeMessage,
+  WebSocketGateway,
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -8,8 +8,17 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { GeneralChatEvents, RedisMessagePayload } from './types/general-chat.type';
-import { UseGuards, UsePipes, ValidationPipe, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  GeneralChatEvents,
+  RedisMessagePayload,
+} from './types/general-chat.type';
+import {
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { WsJwtGuard } from 'src/auth/ws-jwt/ws-jwt.guard';
 import { SocketAuthMiddleware } from 'src/auth/ws.mw';
 import { GeneralChatMessage } from 'src/entities/general-chat-message.entity';
@@ -20,7 +29,7 @@ import { DeleteMessageDto } from './dto/delete-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 import axios from 'axios';
 
-@WebSocketGateway({ 
+@WebSocketGateway({
   namespace: 'general-chat',
   cors: {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
@@ -28,7 +37,9 @@ import axios from 'axios';
   },
 })
 @UseGuards(WsJwtGuard)
-export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
+export class GeneralChatGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit
+{
   @WebSocketServer()
   server: Server<any, GeneralChatEvents>;
 
@@ -41,13 +52,19 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
   ) {
-    this.backendUrl = this.configService.get<string>('BACKEND_URL', 'http://localhost:3000');
+    this.backendUrl = this.configService.get<string>(
+      'BACKEND_URL',
+      'http://localhost:3000',
+    );
   }
 
   async onModuleInit() {
     // Subscribe to Redis channels after the module is fully initialized
     try {
-      await this.redisService.subscribe('general-chat', this.handleRedisMessage.bind(this));
+      await this.redisService.subscribe(
+        'general-chat',
+        this.handleRedisMessage.bind(this),
+      );
       this.logger.log('Subscribed to Redis general-chat channel');
     } catch (error) {
       this.logger.error('Failed to subscribe to Redis:', error.message);
@@ -62,7 +79,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   async handleConnection(client: Socket) {
     try {
       const userId = (client as any).user?.userId;
-      
+
       if (!userId) {
         this.logger.warn('Client connected without user info');
         client.disconnect();
@@ -77,7 +94,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
       // Join a room specific to this user
       client.join(`user:${userId}`);
-      
+
       this.logger.log(`Client ${client.id} connected for user ${userId}`);
     } catch (error) {
       this.logger.error('Error handling connection:', error);
@@ -87,7 +104,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
   handleDisconnect(client: Socket) {
     const userId = (client as any).user?.userId;
-    
+
     if (userId) {
       const sockets = this.userSockets.get(userId);
       if (sockets) {
@@ -107,7 +124,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   ) {
     try {
       const userId = (client as any).user?.userId;
-      
+
       if (!userId) {
         return { success: false, error: 'Unauthorized' };
       }
@@ -120,7 +137,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         this.roomMembers.set(data.roomId, new Set());
       }
       this.roomMembers.get(data.roomId)!.add(userId);
-      
+
       return { success: true };
     } catch (error) {
       this.logger.error('Error joining room:', error);
@@ -135,7 +152,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   ) {
     try {
       const userId = (client as any).user?.userId;
-      
+
       if (!userId) {
         return { success: false, error: 'Unauthorized' };
       }
@@ -151,7 +168,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
           this.roomMembers.delete(data.roomId);
         }
       }
-      
+
       return { success: true };
     } catch (error) {
       this.logger.error('Error leaving room:', error);
@@ -167,19 +184,27 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   ) {
     try {
       const authorId = (client as any).user?.userId;
-      
+      console.log('Message sent by user: ', JSON.stringify(data));
       if (!authorId) {
         return { success: false, error: 'Unauthorized' };
       }
 
-      // Validate that either content or attachmentURL is provided
-      if (!data.content && !data.attachmentURL) {
-        return { success: false, error: 'Either content or attachmentURL must be provided' };
+      // Validate that either content or attachments is provided
+      if (
+        !data.content &&
+        (!data.attachments || data.attachments.length === 0)
+      ) {
+        return {
+          success: false,
+          error: 'Either content or attachments must be provided',
+        };
       }
+
+      // Variables prepared for logic
 
       // Get the token from the client
       const token = this.extractToken(client);
-      
+
       if (!token) {
         this.logger.error('No token found');
         return { success: false, error: 'Authentication token not found' };
@@ -187,25 +212,27 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
       // Clean the token (remove any whitespace or newlines)
       const cleanToken = token.trim();
-      
+
       // Call backend API to store the message
       const response = await axios.post(
         `${this.backendUrl}/general-chat`,
         {
           roomId: data.roomId,
           content: data.content || null,
-          attachmentURL: data.attachmentURL || null,
+          attachments: data.attachments || null,
           replyToId: data.replyToId || null,
         },
         {
           headers: {
-            'Authorization': `Bearer ${cleanToken}`,
+            Authorization: `Bearer ${cleanToken}`,
             'Content-Type': 'application/json',
           },
         },
       );
-      
-      const savedMessage = response.data as GeneralChatMessage;
+
+      const savedMessage = this.transformMessage(
+        response.data as GeneralChatMessage,
+      );
 
       // Publish to Redis for other instances
       const payload: RedisMessagePayload = {
@@ -218,18 +245,22 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
       return { success: true, message: savedMessage };
     } catch (error) {
-      this.logger.error('Error sending message:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Failed to send message';
-      
+      this.logger.error(
+        'Error sending message:',
+        error.response?.data || error.message,
+      );
+      const errorMessage =
+        error.response?.data?.message || 'Failed to send message';
+
       // Emit error event to client
       client.emit('error', {
         action: 'sendMessage',
         error: errorMessage,
       });
 
-      return { 
-        success: false, 
-        error: errorMessage
+      return {
+        success: false,
+        error: errorMessage,
       };
     }
   }
@@ -242,13 +273,13 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   ) {
     try {
       const userId = (client as any).user?.userId;
-      
+
       if (!userId) {
         return { success: false, error: 'Unauthorized' };
       }
 
       const token = this.extractToken(client);
-      
+
       if (!token) {
         this.logger.error('No token found');
         return { success: false, error: 'Authentication token not found' };
@@ -261,17 +292,19 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         `${this.backendUrl}/general-chat/${data.messageId}?roomId=${data.roomId}`,
         {
           content: data.content,
-          attachmentURL: data.attachmentURL,
+          attachments: data.attachments || null,
         },
         {
           headers: {
-            'Authorization': `Bearer ${cleanToken}`,
+            Authorization: `Bearer ${cleanToken}`,
             'Content-Type': 'application/json',
           },
         },
       );
 
-      const updatedMessage = response.data as GeneralChatMessage;
+      const updatedMessage = this.transformMessage(
+        response.data as GeneralChatMessage,
+      );
 
       // Publish to Redis for other instances
       const payload: RedisMessagePayload = {
@@ -284,9 +317,13 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
       return { success: true, message: updatedMessage };
     } catch (error) {
-      this.logger.error('Error updating message:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Failed to update message';
-      
+      this.logger.error(
+        'Error updating message:',
+        error.response?.data || error.message,
+      );
+      const errorMessage =
+        error.response?.data?.message || 'Failed to update message';
+
       // Emit error event to client
       client.emit('error', {
         action: 'updateMessage',
@@ -294,9 +331,9 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         messageId: data.messageId,
       });
 
-      return { 
-        success: false, 
-        error: errorMessage
+      return {
+        success: false,
+        error: errorMessage,
       };
     }
   }
@@ -309,13 +346,13 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   ) {
     try {
       const userId = (client as any).user?.userId;
-      
+
       if (!userId) {
         return { success: false, error: 'Unauthorized' };
       }
 
       const token = this.extractToken(client);
-      
+
       if (!token) {
         this.logger.error('No token found');
         return { success: false, error: 'Authentication token not found' };
@@ -328,7 +365,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         `${this.backendUrl}/general-chat/${data.messageId}/for-me?roomId=${data.roomId}`,
         {
           headers: {
-            'Authorization': `Bearer ${cleanToken}`,
+            Authorization: `Bearer ${cleanToken}`,
             'Content-Type': 'application/json',
           },
         },
@@ -339,9 +376,13 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
       return { success: true };
     } catch (error) {
-      this.logger.error('Error deleting message for user:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Failed to delete message';
-      
+      this.logger.error(
+        'Error deleting message for user:',
+        error.response?.data || error.message,
+      );
+      const errorMessage =
+        error.response?.data?.message || 'Failed to delete message';
+
       // Emit error event to client
       client.emit('error', {
         action: 'deleteForMe',
@@ -349,9 +390,9 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         messageId: data.messageId,
       });
 
-      return { 
-        success: false, 
-        error: errorMessage
+      return {
+        success: false,
+        error: errorMessage,
       };
     }
   }
@@ -364,13 +405,13 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   ) {
     try {
       const userId = (client as any).user?.userId;
-      
+
       if (!userId) {
         return { success: false, error: 'Unauthorized' };
       }
 
       const token = this.extractToken(client);
-      
+
       if (!token) {
         this.logger.error('No token found');
         return { success: false, error: 'Authentication token not found' };
@@ -383,7 +424,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         `${this.backendUrl}/general-chat/${data.messageId}/for-everyone?roomId=${data.roomId}`,
         {
           headers: {
-            'Authorization': `Bearer ${cleanToken}`,
+            Authorization: `Bearer ${cleanToken}`,
             'Content-Type': 'application/json',
           },
         },
@@ -407,9 +448,14 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
       return { success: true };
     } catch (error) {
-      this.logger.error('Error deleting message for everyone:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Failed to delete message for everyone';
-      
+      this.logger.error(
+        'Error deleting message for everyone:',
+        error.response?.data || error.message,
+      );
+      const errorMessage =
+        error.response?.data?.message ||
+        'Failed to delete message for everyone';
+
       // Emit error event to client
       client.emit('error', {
         action: 'deleteForEveryone',
@@ -417,9 +463,9 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
         messageId: data.messageId,
       });
 
-      return { 
-        success: false, 
-        error: errorMessage
+      return {
+        success: false,
+        error: errorMessage,
       };
     }
   }
@@ -432,7 +478,10 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
       switch (payload.type) {
         case 'new-message':
           if (payload.roomId) {
-            this.handleNewMessage(payload.data as GeneralChatMessage, payload.roomId);
+            this.handleNewMessage(
+              this.transformMessage(payload.data as GeneralChatMessage),
+              payload.roomId,
+            );
           }
           break;
         case 'message-deleted':
@@ -442,7 +491,10 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
           break;
         case 'message-updated':
           if (payload.roomId) {
-            this.handleMessageUpdatedFromRedis(payload.data as GeneralChatMessage, payload.roomId);
+            this.handleMessageUpdatedFromRedis(
+              this.transformMessage(payload.data as GeneralChatMessage),
+              payload.roomId,
+            );
           }
           break;
       }
@@ -453,15 +505,28 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
 
   private handleNewMessage(message: GeneralChatMessage, roomId: string) {
     // Broadcast to all members in the room
+      console.log(`📤 Emitting newMessage to room:${roomId}`, message.id);
+
     this.server.to(`room:${roomId}`).emit('newMessage', message);
   }
 
-  private handleMessageDeletedFromRedis(data: { messageId: string; deletedFor: 'everyone'; roomId: string; authorId: string }, roomId: string) {
+  private handleMessageDeletedFromRedis(
+    data: {
+      messageId: string;
+      deletedFor: 'everyone';
+      roomId: string;
+      authorId: string;
+    },
+    roomId: string,
+  ) {
     // Broadcast to all room members
     this.server.to(`room:${roomId}`).emit('messageDeleted', data);
   }
 
-  private handleMessageUpdatedFromRedis(message: GeneralChatMessage, roomId: string) {
+  private handleMessageUpdatedFromRedis(
+    message: GeneralChatMessage,
+    roomId: string,
+  ) {
     // Broadcast to all members in the room
     this.server.to(`room:${roomId}`).emit('messageUpdated', message);
   }
@@ -469,7 +534,7 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
   private extractToken(client: Socket): string | null {
     // Try to get token from headers first
     let token = client.handshake.headers?.authorization;
-    
+
     if (token) {
       if (token.startsWith('Bearer ')) {
         return token.slice(7).trim();
@@ -487,17 +552,23 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
     const cookies = client.handshake.headers?.cookie;
     this.logger.log('Checking cookies for token');
     this.logger.log('Cookies string:', cookies);
-    
+
     if (cookies) {
       const accessTokenCookie = cookies
         .split(';')
-        .find(cookie => cookie.trim().startsWith('accessToken='));
-      
-      this.logger.log('Found accessToken cookie:', accessTokenCookie ? 'Yes' : 'No');
-      
+        .find((cookie) => cookie.trim().startsWith('accessToken='));
+
+      this.logger.log(
+        'Found accessToken cookie:',
+        accessTokenCookie ? 'Yes' : 'No',
+      );
+
       if (accessTokenCookie) {
         const cookieToken = accessTokenCookie.split('=')[1].trim();
-        this.logger.log('Extracted token from cookie (first 20 chars):', cookieToken.substring(0, 20) + '...');
+        this.logger.log(
+          'Extracted token from cookie (first 20 chars):',
+          cookieToken.substring(0, 20) + '...',
+        );
         return cookieToken;
       }
     } else {
@@ -509,5 +580,36 @@ export class GeneralChatGateway implements OnGatewayConnection, OnGatewayDisconn
     this.logger.debug('Auth:', JSON.stringify(client.handshake.auth));
 
     return null;
+  }
+
+  /**
+   * Transform message to support frontend attachments array structure
+   * Maps legacy attachmentURL -> attachments[]
+   */
+  private transformMessage(message: GeneralChatMessage): GeneralChatMessage {
+    if (!message) return message;
+
+    // Create shallow copy to avoid mutating original if needed
+    // Cast to any to allow adding 'attachments' property if not in type definition yet
+    const transformed = { ...message } as any;
+
+    // If backend returns attachmentURL, populate attachments array shim
+    if (
+      transformed.attachmentURL &&
+      (!transformed.attachments || transformed.attachments.length === 0)
+    ) {
+      transformed.attachments = [
+        {
+          id: `att-${transformed.id}`, // Generate deterministic ID or use what we have
+          name: 'Attachment', // We don't save name in legacy backend, so use generic
+          url: transformed.attachmentURL,
+          // type: 'file', // Default type
+        },
+      ];
+    } else if (!transformed.attachments) {
+      transformed.attachments = [];
+    }
+
+    return transformed as GeneralChatMessage;
   }
 }

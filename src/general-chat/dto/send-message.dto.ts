@@ -1,4 +1,12 @@
-import { IsString, IsUUID, IsOptional, MaxLength, ValidateIf } from 'class-validator';
+import {
+  IsString,
+  IsUUID,
+  IsOptional,
+  MaxLength,
+  ValidateIf,
+  IsArray,
+} from 'class-validator';
+import { Attachment } from '../types/general-chat.type';
 
 export class SendMessageDto {
   @IsUUID('4')
@@ -10,14 +18,16 @@ export class SendMessageDto {
   content?: string;
 
   @IsOptional()
-  @IsString()
-  attachmentURL?: string;
+  @IsArray()
+  attachments?: Attachment[];
 
   @IsOptional()
   @IsUUID('4')
   replyToId?: string;
 
-  @ValidateIf(o => !o.content && !o.attachmentURL)
-  @IsString({ message: 'Either content or attachmentURL must be provided' })
+  @ValidateIf(
+    (o) => !o.content && (!o.attachments || o.attachments.length === 0),
+  )
+  @IsString({ message: 'Either content or attachments must be provided' })
   _validator?: string;
 }

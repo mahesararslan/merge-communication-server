@@ -1,4 +1,11 @@
-import { IsString, IsUUID, IsOptional, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsUUID,
+  IsOptional,
+  MaxLength,
+  IsArray,
+} from 'class-validator';
+import { Attachment } from '../types/general-chat.type';
 
 export class UpdateMessageDto {
   @IsUUID('4')
@@ -13,6 +20,6 @@ export class UpdateMessageDto {
   content?: string;
 
   @IsOptional()
-  @IsString()
-  attachmentURL?: string;
+  @IsArray()
+  attachments?: Attachment[];
 }
