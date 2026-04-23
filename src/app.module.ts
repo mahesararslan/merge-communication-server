@@ -8,6 +8,7 @@ import { RedisModule } from './redis/redis.module';
 import { GeneralChatModule } from './general-chat/general-chat.module';
 import { AnnouncementModule } from './announcement/announcement.module';
 import { NotificationModule } from './notification/notification.module';
+import { LiveQnaModule } from './live-qna/live-qna.module';
 
 @Module({
   imports: [
@@ -19,10 +20,11 @@ import { NotificationModule } from './notification/notification.module';
     DirectChatModule, 
     AuthModule, 
     GeneralChatModule, 
-    AnnouncementModule, NotificationModule,
+    AnnouncementModule, 
+    NotificationModule,
+    LiveQnaModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
-
