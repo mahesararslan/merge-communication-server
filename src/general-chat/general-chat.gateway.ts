@@ -405,7 +405,7 @@ export class GeneralChatGateway
   ) {
     try {
       const userId = (client as any).user?.userId;
-
+      console.log("Message to Delete",JSON.stringify(data))
       if (!userId) {
         return { success: false, error: 'Unauthorized' };
       }
@@ -485,6 +485,7 @@ export class GeneralChatGateway
           }
           break;
         case 'message-deleted':
+          console.log("📨 Received message-deleted from Redis:", JSON.stringify(payload));
           if (payload.roomId) {
             this.handleMessageDeletedFromRedis(payload.data, payload.roomId);
           }
@@ -519,7 +520,9 @@ export class GeneralChatGateway
     },
     roomId: string,
   ) {
+    console.log("🗑️ handleMessageDeletedFromRedis called:", JSON.stringify(data));
     // Broadcast to all room members
+    console.log(`📤 Emitting messageDeleted to room:${roomId}`, data.messageId);
     this.server.to(`room:${roomId}`).emit('messageDeleted', data);
   }
 

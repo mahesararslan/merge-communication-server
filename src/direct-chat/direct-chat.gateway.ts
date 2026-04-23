@@ -399,7 +399,9 @@ export class DirectChatGateway implements OnGatewayConnection, OnGatewayDisconne
     this.server.to(`user:${senderId}`).emit('newMessage', message);
   }
 
+
   private handleMessageDeletedFromRedis(data: { messageId: string; deletedFor: 'me' | 'everyone'; senderId: string; recipientId: string }) {
+    console.log("Inside Redis Event Emitter",JSON.stringify(data))
     // Broadcast to sender and recipient
     if (data.senderId) {
       this.server.to(`user:${data.senderId}`).emit('messageDeleted', data);

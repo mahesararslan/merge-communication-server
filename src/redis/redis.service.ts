@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
@@ -77,10 +82,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     if (!this.isReady) {
       throw new Error('Redis is not ready yet');
     }
+
     await this.publisher.publish(channel, JSON.stringify(message));
   }
 
-  async subscribe(channel: string, handler: (message: any) => void): Promise<void> {
+  async subscribe(
+    channel: string,
+    handler: (message: any) => void,
+  ): Promise<void> {
     if (!this.isReady) {
       throw new Error('Redis is not ready yet');
     }
