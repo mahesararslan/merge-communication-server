@@ -9,6 +9,7 @@ import { GeneralChatModule } from './general-chat/general-chat.module';
 import { AnnouncementModule } from './announcement/announcement.module';
 import { NotificationModule } from './notification/notification.module';
 import { LiveQnaModule } from './live-qna/live-qna.module';
+import { LiveSessionModule } from './live-session/live-session.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { LiveQnaModule } from './live-qna/live-qna.module';
     AnnouncementModule, 
     NotificationModule,
     LiveQnaModule,
+    LiveSessionModule,
   ],
   controllers: [AppController],
   providers: [AppService],
